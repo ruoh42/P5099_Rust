@@ -1,0 +1,36 @@
+[package]
+name = "p5099-server"
+description = "KartRider P5099 game server"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+flate2.workspace = true
+p5099-core = { path = "../p5099-core" }
+p5099-discord = { path = "../p5099-discord", optional = true }
+p5099-profile = { path = "../p5099-profile" }
+p5099-rho5 = { path = "../p5099-rho5" }
+quick-xml.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+
+[features]
+default = ["discord"]
+discord = ["dep:p5099-discord"]
+
+[dev-dependencies]
+tempfile = "3.23"
+
+[lints]
+workspace = true

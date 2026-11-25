@@ -1,0 +1,24 @@
+[package]
+name = "p5099-discord"
+description = "Discord bot for the p5099-server operator console, run inside the server"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+p5099-core = { path = "../p5099-core" }
+serde.workspace = true
+serde_json.workspace = true
+serenity = { git = "https://github.com/serenity-rs/serenity", rev = "b93c5091dda4ef81f52200df31031080f0e65c83", default-features = false, features = [
+    "gateway",
+    "model",
+    "rustls_backend",
+] }
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
