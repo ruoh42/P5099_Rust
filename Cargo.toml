@@ -1,20 +1,22 @@
 [workspace]
 members = [
-    "crates/p5136-assets",
-    "crates/p5136-client-oracle",
-    "crates/p5136-cli",
-    "crates/p5136-connector",
-    "crates/p5136-core",
-    "crates/p5136-profile",
-    "crates/p5136-rho5",
-    "crates/p5136-server",
+    "crates/p5099-assets",
+    "crates/p5099-client-oracle",
+    "crates/p5099-connector",
+    "crates/p5099-core",
+    "crates/p5099-discord",
+    "crates/p5099-launcher",
+    "crates/p5099-profile",
+    "crates/p5099-rho5",
+    "crates/p5099-server",
 ]
+default-members = ["crates/p5099-launcher"]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "AFL-3.0"
-rust-version = "1.94"
+rust-version = "1.95"
 version = "1.0.0"
 
 [workspace.dependencies]
@@ -23,11 +25,10 @@ base64 = "0.22"
 cap-fs-ext = "4.0.2"
 cap-std = "4.0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 fs2 = "0.4"
 flate2 = "1.1"
 md-5 = "0.10"
-local-ip-address = "0.6.13"
 rand = "0.9"
 quick-xml = "0.41"
 rfd = "0.17.2"
@@ -36,6 +37,7 @@ serde_json = "1.0"
 sha2 = "0.10"
 thiserror = "2.0"
 tokio = { version = "1.49", features = [
+    "fs",
     "io-util",
     "macros",
     "net",

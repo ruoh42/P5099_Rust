@@ -1,0 +1,8 @@
+LIBRARY nmcogame.dll
+EXPORTS
+    NMCO_CallNMFunction
+    NMCO_MemoryFree
+    NMCO_SetPatchOption
+    NMCO_SetLocaleAndRegion
+    NMCO_SetVersionFileUrlA
+    NMCO_SetVersionFileUrlW

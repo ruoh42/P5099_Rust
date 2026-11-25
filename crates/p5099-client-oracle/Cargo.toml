@@ -1,0 +1,15 @@
+[package]
+name = "p5099-client-oracle"
+description = "Independent reconstructed P5099 client packet consumers"
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+version.workspace = true
+
+[dev-dependencies]
+p5099-core = { path = "../p5099-core" }
+p5099-server = { path = "../p5099-server" }
+
+[lints]
+workspace = true

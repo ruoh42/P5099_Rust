@@ -1,0 +1,278 @@
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  p5099:
+    name: p5099 (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            ext: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            ext: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build p5099-launcher
+        shell: bash
+        env:
+          P5099_RELEASE_PUBLIC_KEY: ${{ vars.P5099_RELEASE_PUBLIC_KEY }}
+          P5099_DISCORD_APPLICATION_ID: ${{ vars.P5099_DISCORD_APPLICATION_ID }}
+          P5099_SERVER_HOST: ${{ vars.P5099_SERVER_HOST }}
+          # The launcher checks this repository's GitHub releases for updates.
+          P5099_RELEASE_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          if [ -z "$P5099_RELEASE_PUBLIC_KEY" ]; then
+            echo "::error::repository variable P5099_RELEASE_PUBLIC_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$P5099_DISCORD_APPLICATION_ID" ]; then
+            echo "::warning::repository variable P5099_DISCORD_APPLICATION_ID is not set; the launcher shows no Discord status"
+          fi
+          if [ -z "$P5099_SERVER_HOST" ]; then
+            echo "::warning::repository variable P5099_SERVER_HOST is not set; the launcher starts with an empty server address"
+          fi
+          cargo build --release --locked -p p5099-launcher --target ${{ matrix.target }}
+
+      - name: Stage files
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/p5099-launcher${{ matrix.ext }}" dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  xun-sidecar:
+    name: XUN sidecar (Win32)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S native/p5099-xun-sidecar -B build/xun-sidecar-win32 -A Win32
+
+      - name: Build
+        run: cmake --build build/xun-sidecar-win32 --config Release
+
+      - name: Test
+        run: ctest --test-dir build/xun-sidecar-win32 -C Release --output-on-failure
+
+      - name: Install
+        run: cmake --install build/xun-sidecar-win32 --config Release --prefix dist/xun
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-xun-sidecar-win32
+          path: dist/xun/
+          if-no-files-found: error
+
+  nmco:
+    name: nmcogame bridge (Win32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mingw-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-mingw-w64-i686-posix
+
+      - name: Build
+        run: CXX=i686-w64-mingw32-g++-posix native/p5099-nmco/build.sh
+
+      - name: Stage files
+        run: |
+          mkdir -p dist
+          cp native/p5099-nmco/out/nmcogame.dll dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-nmco-win32
+          path: dist/
+          if-no-files-found: error
+
+  installer-windows:
+    name: Installer (Windows)
+    needs: [p5099]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p5099-x86_64-pc-windows-msvc
+          path: launcher
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$version" `
+            "/DLauncherExe=$PWD\launcher\p5099-launcher.exe" `
+            "/DOutputDir=$PWD\dist" `
+            installer\windows\p5099-setup.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-installer-windows
+          path: dist/
+          if-no-files-found: error
+
+  installer-macos:
+    name: Installer (macOS)
+    needs: [p5099]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p5099-*-apple-darwin
+          path: launcher
+
+      - name: Build universal app and DMG
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          lipo -create \
+            launcher/p5099-aarch64-apple-darwin/p5099-launcher \
+            launcher/p5099-x86_64-apple-darwin/p5099-launcher \
+            -output p5099-launcher
+          installer/macos/make-dmg.sh p5099-launcher "$version" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-installer-macos
+          path: dist/
+          if-no-files-found: error
+
+  launcher-update:
+    name: Launcher update
+    needs: [p5099, installer-macos]
+    runs-on: ubuntu-latest
+    env:
+      LAUNCHER_SIGNING_KEY: ${{ secrets.LAUNCHER_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p5099-x86_64-pc-windows-msvc
+          path: windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p5099-installer-macos
+          path: macos
+
+      - name: Sign release
+        run: |
+          set -eu
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          fi
+          if [ -z "$LAUNCHER_SIGNING_KEY" ]; then
+            echo "::error::secret LAUNCHER_SIGNING_KEY is not set"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/launcher-signing-key.pem"
+          (umask 077 && printf '%s\n' "$LAUNCHER_SIGNING_KEY" > "$key")
+          if [ "$(installer/launcher-release.sh pubkey "$key")" != "${{ vars.P5099_RELEASE_PUBLIC_KEY }}" ]; then
+            echo "::error::LAUNCHER_SIGNING_KEY does not match P5099_RELEASE_PUBLIC_KEY"
+            rm -f "$key"
+            exit 1
+          fi
+          installer/launcher-release.sh sign "$key" "$version" "${{ vars.LAUNCHER_MIN_VERSION || '0.0.0' }}" \
+            windows/p5099-launcher.exe macos/p5099.app.zip update
+          rm -f "$key"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-launcher-update
+          path: update/
+          if-no-files-found: error
+
+  package:
+    name: Package
+    needs: [p5099, xun-sidecar, nmco, installer-windows, installer-macos, launcher-update]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create archives
+        run: |
+          set -euo pipefail
+          mkdir -p release
+
+          mkdir -p bundle/p5099-client-addons
+          cp -r artifacts/p5099-nmco-win32/. bundle/p5099-client-addons/
+          mkdir -p bundle/p5099-client-addons/xun
+          cp -r artifacts/p5099-xun-sidecar-win32/. bundle/p5099-client-addons/xun/
+          (cd bundle && zip -qr ../release/p5099-client-addons-win32.zip p5099-client-addons)
+
+          cp artifacts/p5099-installer-windows/P5099-Setup.exe release/
+          cp artifacts/p5099-installer-macos/P5099.dmg release/
+
+          # Signed launcher update: latest.txt names p5099.exe and
+          # p5099.app.zip by their URLs in this release.
+          cp -r artifacts/p5099-launcher-update/. release/
+
+          (cd release && sha256sum * > SHA256SUMS.txt)
+          ls -l release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p5099-release
+          path: release/
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

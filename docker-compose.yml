@@ -1,0 +1,37 @@
+# Builds and runs p5099-server from this checkout. Every setting comes from
+# `.env` (see .env.example); this file maps those names onto the server's
+# `P5099_<OPTION>` variables (`P5099_<OPTION>` is the server's `--<option>`).
+services:
+  server:
+    image: rust:latest
+    # The server binds its own ports (base port and the next seven) on the
+    # host, so the port list lives in one place: CONFIGURED_PORT. Open them in
+    # the host firewall; keep the RCON console on loopback.
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      # Required, so a missing line fails here instead of starting a server
+      # that nobody can reach or that skips account checks.
+      P5099_BIND: ${BIND:?set BIND in .env}
+      P5099_ADVERTISE: ${ADVERTISE:?set ADVERTISE in .env}
+      P5099_REQUIRE_ACCOUNT: ${REQUIRE_ACCOUNT:?set REQUIRE_ACCOUNT in .env}
+      # Optional. Defaults are spelled out because clap rejects an empty
+      # value for a flag or a port.
+      P5099_DISABLE_ACCOUNT_REGISTRATION: ${DISABLE_ACCOUNT_REGISTRATION:-false}
+      P5099_CONFIGURED_PORT: ${CONFIGURED_PORT:-39311}
+      P5099_ADMIN_BIND: ${RCON_HOST:-127.0.0.1}
+      # Empty means off for both the RCON console and the Discord bot.
+      P5099_ADMIN_TOKEN: ${RCON_TOKEN:-}
+      P5099_DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      P5099_DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      # Where the folders below appear inside the container.
+      P5099_PROFILE_ROOT: /app/Profile
+      P5099_CLIENT_DIR: /app/Data
+      P5099_DISTRIBUTION_DIR: /app/Distribution
+    volumes:
+      - ./:/app
+      - ${PROFILE_DIR:?set PROFILE_DIR in .env}:/app/Profile
+      - ${DATA_DIR:?set DATA_DIR in .env}:/app/Data:ro
+      - ${DISTRIBUTION_DIR:?set DISTRIBUTION_DIR in .env}:/app/Distribution:ro
+    working_dir: /app
+    command: bash -c "cargo build --release --locked -p p5099-server && exec ./target/release/p5099-server"
